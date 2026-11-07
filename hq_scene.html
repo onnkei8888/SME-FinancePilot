@@ -2,111 +2,65 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07111f;font-family:Arial,sans-serif}
-#scene{width:100%;height:100%;display:block}
-#hint{position:absolute;left:16px;top:12px;color:#c5d7ea;font-size:12px;letter-spacing:.4px;background:rgba(7,17,31,.72);padding:8px 11px;border:1px solid #29435f;border-radius:10px}
-#label{position:absolute;right:16px;bottom:14px;color:#dcecff;font-size:12px;background:rgba(7,17,31,.78);padding:9px 12px;border:1px solid #29435f;border-radius:10px;max-width:260px}
+*{box-sizing:border-box} body{margin:0;overflow:hidden;background:#081522;font-family:Arial,sans-serif}
+#scene{width:100%;height:700px}
+#panel{position:absolute;top:18px;left:18px;width:255px;padding:17px;border:1px solid #45617c;border-radius:15px;color:#fff;background:rgba(10,25,43,.9);z-index:5;pointer-events:none}
+#panel h2{font-size:16px;margin:0 0 9px;color:#fff}#panel p{font-size:12px;color:#c3d5e6;line-height:1.55;margin:7px 0}
+#tag{position:absolute;top:18px;right:20px;background:#f5b942;color:#172536;font-weight:bold;letter-spacing:2px;padding:8px 13px;border-radius:6px}
+#hint{position:absolute;bottom:17px;left:50%;transform:translateX(-50%);color:#c3d5e6;background:rgba(10,25,43,.9);padding:9px 15px;border-radius:20px;font-size:12px;white-space:nowrap;pointer-events:none}
 </style>
 </head>
 <body>
-<div id="hint">DRAG TO ROTATE · SCROLL TO ZOOM · CLICK A BUILDING</div>
-<div id="label">FINANCE CORE · Coordinating five specialist agents</div>
-<canvas id="scene"></canvas>
+<div id="scene"></div>
+<div id="panel"><h2>🏙️ FINANCE CORE</h2><p>Welcome to SME FinancePilot.</p><p>Click a building to inspect its specialised agent.</p><p>Five agents · One financial intelligence system.</p></div>
+<div id="tag">DEMO</div><div id="hint">Drag to rotate · Scroll to zoom · Click a building</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script type="module">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
-{
-const canvas=document.getElementById('scene');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
-renderer.setSize(canvas.clientWidth,canvas.clientHeight,false);
-renderer.shadowMap.enabled=true;
-renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-renderer.outputColorSpace=THREE.SRGBColorSpace;
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x07111f);
-scene.fog=new THREE.Fog(0x07111f,22,55);
-const camera=new THREE.PerspectiveCamera(42,canvas.clientWidth/canvas.clientHeight,.1,100);
-camera.position.set(15,13,19);
-const controls=new OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true; controls.target.set(0,1.3,0); controls.minDistance=10; controls.maxDistance=32;
-scene.add(new THREE.HemisphereLight(0xa9d9ff,0x18243b,2.1));
-const key=new THREE.DirectionalLight(0xffffff,2.2);key.position.set(8,15,10);key.castShadow=true;scene.add(key);
-const fill=new THREE.PointLight(0x38d9c0,35,30);fill.position.set(-7,7,-5);scene.add(fill);
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(80,80),new THREE.MeshStandardMaterial({color:0x0b1b2d,roughness:.88}));
-floor.rotation.x=-Math.PI/2;floor.position.y=-.12;floor.receiveShadow=true;scene.add(floor);
-const grid=new THREE.GridHelper(36,36,0x24425d,0x183149);grid.position.y=-.1;scene.add(grid);
-const group=new THREE.Group();scene.add(group);
-const clickable=[];
-function mat(color,metal=0.25,rough=.48,emissive=0x000000){return new THREE.MeshStandardMaterial({color,metalness:metal,roughness:rough,emissive,emissiveIntensity:.25})}
-const glass=mat(0x173d59,.55,.22,0x071c2b), gold=mat(0xe3b86d,.55,.3), cyan=mat(0x36d7c2,.35,.3,0x0a4c43), blue=mat(0x4d8fe8,.4,.3), violet=mat(0x9679e8,.4,.3), coral=mat(0xf18b70,.35,.35), concrete=mat(0x243b53,.25,.7);
-function box(parent,x,y,z,w,h,d,material){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m}
-function cylinder(parent,x,y,z,rt,rb,h,material,segments=12){const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,segments),material);m.position.set(x,y,z);m.castShadow=true;parent.add(m);return m}
-function tower(name,desc,x,z,color,style){
- const g=new THREE.Group();g.position.set(x,0,z);group.add(g);
- box(g,0,.12,0,3.6,.24,3.2,concrete);
- const bodyMat=mat(color,.38,.32);
- if(style===0){
-   box(g,0,1.45,0,2.0,2.55,1.9,bodyMat);
-   box(g,2,1.0,0,.42,1.8,1.7,glass);
-   cylinder(g,0,3.05,0,.95,.95,.22,gold,8);
-   cylinder(g,0,3.35,0,.14,.14,.45,gold,8);
- }else if(style===1){
-   for(let i=0;i<4;i++){let w=2.6-i*.34;box(g,0,.55+i*.55,0,w,.48,2.25,bodyMat);}
-   box(g,0,2.85,0,.5,.25,.5,gold);
- }else if(style===2){
-   cylinder(g,0,1.45,0,1.25,1.25,2.5,bodyMat,10);
-   cylinder(g,0,2.8,0,.78,.78,.22,gold,10);
-   for(let i=0;i<8;i++){let a=i*Math.PI/4;box(g,Math.cos(a)*1.0,1.45,Math.sin(a)*1.0,.12,2.05,.12,gold);}
- }else if(style===3){
-   box(g,0,1.1,0,2.6,1.8,2.2,bodyMat);
-   box(g,0,2.25,0,2.0,.5,1.7,glass);
-   const roof=new THREE.Mesh(new THREE.ConeGeometry(1.55,.9,4),gold);roof.position.y=2.95;roof.rotation.y=Math.PI/4;roof.castShadow=true;g.add(roof);
- }else{
-   cylinder(g,0,1.25,0,1.35,1.35,2.2,bodyMat,6);
-   cylinder(g,0,2.45,0,.95,.95,.25,glass,6);
-   cylinder(g,0,2.75,0,.55,.55,.35,gold,6);
-   for(let i=0;i<3;i++){let a=i*2*Math.PI/3;box(g,Math.cos(a)*1.5,.55,Math.sin(a)*1.5,.5,.9,.5,bodyMat);}
- }
- // luminous windows / details
- for(let row=0;row<3;row++) for(let col=-1;col<=1;col++){
-   box(g,col*.48,.55+row*.48,1.02,.18,.22,.035,cyan);
- }
- const ring=new THREE.Mesh(new THREE.TorusGeometry(1.9,.025,6,48),mat(color,.4,.3,color));ring.rotation.x=Math.PI/2;ring.position.y=.03;g.add(ring);
- g.userData={name,desc,baseY:0};
- clickable.push(g);
- const badge=cylinder(group,x,3.85,z,.17,.17,.06,mat(color,.2,.3,color),16);
- badge.rotation.x=Math.PI/2;
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const el=document.getElementById('scene'),scene=new THREE.Scene();
+scene.background=new THREE.Color('#081522');scene.fog=new THREE.Fog('#081522',24,48);
+const camera=new THREE.PerspectiveCamera(42,el.clientWidth/el.clientHeight,.1,100);camera.position.set(16,17,21);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(el.clientWidth,el.clientHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.25;el.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.target.set(0,1,0);controls.minDistance=11;controls.maxDistance=36;controls.maxPolarAngle=Math.PI/2.05;
+scene.add(new THREE.HemisphereLight(0xc7e8ff,0x24334a,2.1));
+const sun=new THREE.DirectionalLight(0xffffff,3);sun.position.set(9,16,10);sun.castShadow=true;scene.add(sun);
+const glow=new THREE.PointLight(0xffc65c,40,20);glow.position.set(0,4,0);scene.add(glow);
+const mat=(c,m=.4,r=.28)=>new THREE.MeshStandardMaterial({color:c,metalness:m,roughness:r});
+const floor=new THREE.Mesh(new THREE.CylinderGeometry(12,12,.5,8),mat('#172d42',.5,.45));floor.position.y=-.3;floor.receiveShadow=true;scene.add(floor);
+const roadMat=new THREE.MeshBasicMaterial({color:'#42cfc9'});
+function road(x,z){const curve=new THREE.CatmullRomCurve3([new THREE.Vector3(0,-.025,0),new THREE.Vector3(x*.45,-.025,z*.45),new THREE.Vector3(x,-.025,z)]);scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve,30,.045,8,false),roadMat));}
+const selectable=[];
+function building(cfg){
+ const g=new THREE.Group();g.position.set(cfg.x,0,cfg.z);g.userData={name:cfg.name,type:cfg.type};
+ const base=new THREE.Mesh(new THREE.BoxGeometry(2.8,.24,2.8),mat('#304b63'));base.position.y=.12;g.add(base);
+ const tower=new THREE.Mesh(new THREE.BoxGeometry(cfg.w||1.65,cfg.h, cfg.d||1.65),mat(cfg.color,.55,.22));tower.position.y=cfg.h/2+.24;tower.castShadow=true;g.add(tower);
+ // bright horizontal window bands
+ for(let y=.55;y<cfg.h;y+=.62){const band=new THREE.Mesh(new THREE.BoxGeometry((cfg.w||1.65)+.035,.055,(cfg.d||1.65)+.035),new THREE.MeshBasicMaterial({color:cfg.glow}));band.position.y=y+.24;g.add(band);}
+ if(cfg.type==='finance'){const roof=new THREE.Mesh(new THREE.ConeGeometry(1.25,1.15,4),mat('#9bdfff',.6,.18));roof.position.y=cfg.h+1;roof.rotation.y=Math.PI/4;g.add(roof);const antenna=new THREE.Mesh(new THREE.CylinderGeometry(.035,.06,.8,8),mat('#e9c36b'));antenna.position.y=cfg.h+1.85;g.add(antenna);}
+ if(cfg.type==='cash'){const roof=new THREE.Mesh(new THREE.TorusGeometry(.9,.13,12,48),mat('#9effeb'));roof.rotation.x=Math.PI/2;roof.position.y=cfg.h+.48;g.add(roof);const canopy=new THREE.Mesh(new THREE.CylinderGeometry(1.05,.85,.18,32),mat('#147d78'));canopy.position.y=cfg.h+.15;g.add(canopy);}
+ if(cfg.type==='risk'){const dome=new THREE.Mesh(new THREE.SphereGeometry(1,24,16,0,Math.PI*2,0,Math.PI/2),mat('#ffb477'));dome.position.y=cfg.h+.24;g.add(dome);const rim=new THREE.Mesh(new THREE.TorusGeometry(1,.07,8,32),mat('#ffd09c'));rim.rotation.x=Math.PI/2;rim.position.y=cfg.h+.25;g.add(rim);}
+ if(cfg.type==='strategy'){const roof=new THREE.Mesh(new THREE.ConeGeometry(1.25,1.25,6),mat('#c6a6ff'));roof.position.y=cfg.h+.9;g.add(roof);const ring=new THREE.Mesh(new THREE.TorusGeometry(.72,.07,8,32),mat('#dfcaff'));ring.rotation.x=Math.PI/2;ring.position.y=cfg.h+.2;g.add(ring);}
+ if(cfg.type==='decision'){const roof=new THREE.Mesh(new THREE.OctahedronGeometry(.92),mat('#a3efb7'));roof.position.y=cfg.h+.85;g.add(roof);const pillars= new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,1.2,8),mat('#b6e9c5'));for(let a=0;a<4;a++){const p=pillars.clone();p.position.set(Math.cos(a*Math.PI/2)*.85,.85,Math.sin(a*Math.PI/2)*.85);g.add(p);}}
+ scene.add(g);selectable.push(g);road(cfg.x,cfg.z);
 }
-tower("FINANCE TOWER","Finance Agent · Analyses revenue, COGS, operating expenses and margins.",-5,-3,0x4d9be8,0);
-tower("CASH FLOW HARBOUR","Cash Flow Agent · Monitors liquidity, net cash movement and estimated runway.",0,-5,0x36d7c2,1);
-tower("RISK OBSERVATORY","Risk Agent · Detects operating deficit, weak cash buffers and cost-ratio warnings.",5,-2,0xf0b65f,2);
-tower("STRATEGY LAB","Strategy Agent · Compares cost-control, sales-growth and balanced scenarios.",-3,4,0x9b85ed,3);
-tower("DECISION PAVILION","Decision Agent · Synthesises evidence and waits for owner approval.",4,4,0xf18b70,4);
-// central core
-const core=new THREE.Group();core.position.set(0,0,0);group.add(core);
-cylinder(core,0,.2,0,1.35,1.35,.4,gold,8);
-const coreMesh=new THREE.Mesh(new THREE.OctahedronGeometry(1.05,1),mat(0x3be0cb,.5,.2,0x0c665c));coreMesh.position.y=1.65;coreMesh.castShadow=true;core.add(coreMesh);
-const halo=new THREE.Mesh(new THREE.TorusGeometry(1.5,.045,8,64),gold);halo.position.y=1.65;halo.rotation.x=Math.PI/2;core.add(halo);
-for(let i=0;i<5;i++){const a=i*2*Math.PI/5;const curve=new THREE.QuadraticBezierCurve3(new THREE.Vector3(Math.cos(a)*1.5,.2,Math.sin(a)*1.5),new THREE.Vector3(Math.cos(a)*2.7,1.8,Math.sin(a)*2.7),new THREE.Vector3(Math.cos(a)*3.5,.15,Math.sin(a)*3.5));const pts=curve.getPoints(32);const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x347c99,transparent:true,opacity:.6}));group.add(line);}
-const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
-let downX=0,downY=0;
-renderer.domElement.addEventListener('pointerdown',e=>{downX=e.clientX;downY=e.clientY;});
-renderer.domElement.addEventListener('pointerup',e=>{
- if(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY)>7)return;
- const rect=renderer.domElement.getBoundingClientRect();
- pointer.x=((e.clientX-rect.left)/rect.width)*2-1;pointer.y=-((e.clientY-rect.top)/rect.height)*2+1;
- raycaster.setFromCamera(pointer,camera);
- const hits=raycaster.intersectObjects(clickable,true);
- if(hits.length){let obj=hits[0].object;while(obj.parent && !obj.userData.name)obj=obj.parent;if(obj.userData.name)document.getElementById('label').textContent=obj.userData.name+" · "+obj.userData.desc;}
-});
-function resize(){const w=canvas.clientWidth,h=canvas.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);}
-window.addEventListener('resize',resize);
-function animate(){requestAnimationFrame(animate);coreMesh.rotation.y+=.004;coreMesh.rotation.x+=.002;halo.rotation.z+=.003;controls.update();renderer.render(scene,camera);}
-animate();
-}
+const configs=[
+{name:'FINANCE TOWER',type:'finance',x:-6,z:-4,h:3.8,w:1.55,d:1.55,color:'#2389c9',glow:'#b9eaff'},
+{name:'CASH FLOW HARBOUR',type:'cash',x:6,z:-4,h:2.7,color:'#16a98f',glow:'#9bffea'},
+{name:'RISK OBSERVATORY',type:'risk',x:-6,z:4,h:2.5,color:'#d47b43',glow:'#ffd0a4'},
+{name:'STRATEGY LAB',type:'strategy',x:6,z:4,h:3.1,color:'#8863c7',glow:'#e0caff'},
+{name:'DECISION PAVILION',type:'decision',x:0,z:7,h:2.4,color:'#329963',glow:'#b6f3c8'}];
+configs.forEach(building);
+const core=new THREE.Group();const plinth=new THREE.Mesh(new THREE.CylinderGeometry(1.75,2.05,.4,48),mat('#d7a63e',.7,.2));plinth.position.y=.1;core.add(plinth);
+const orb=new THREE.Mesh(new THREE.IcosahedronGeometry(.83,2),new THREE.MeshPhysicalMaterial({color:'#ffdc84',emissive:'#a96c17',emissiveIntensity:.75,metalness:.55,roughness:.12}));orb.position.y=1.45;core.add(orb);
+const halo=new THREE.Mesh(new THREE.TorusGeometry(1.28,.055,12,80),new THREE.MeshBasicMaterial({color:'#ffe19a'}));halo.rotation.x=Math.PI/2;halo.position.y=1.45;core.add(halo);scene.add(core);core.userData={name:'FINANCE CORE',type:'central'};selectable.push(core);
+const desc={central:'Central orchestrator: coordinates the five specialised agents and presents consolidated findings.',finance:'Finance Agent: analyses revenue, COGS, gross profit and operating surplus.',cash:'Cash Flow Agent: tracks actual cash received, cash paid, net cash flow and closing cash.',risk:'Risk Agent: flags cash pressure, high cost ratios and possible financial warning signs.',strategy:'Strategy Agent: compares illustrative cost-control and revenue-growth scenarios.',decision:'Decision Agent: prepares recommended actions and waits for SME owner approval.'};
+const ray=new THREE.Raycaster(),pointer=new THREE.Vector2(),panel=document.getElementById('panel');
+renderer.domElement.addEventListener('click',e=>{const r=renderer.domElement.getBoundingClientRect();pointer.x=((e.clientX-r.left)/r.width)*2-1;pointer.y=-((e.clientY-r.top)/r.height)*2+1;ray.setFromCamera(pointer,camera);const hits=ray.intersectObjects(selectable.flatMap(g=>g.children),true);if(!hits.length)return;let o=hits[0].object;while(o&&!o.userData.name)o=o.parent;if(o&&o.userData.name){panel.innerHTML=`<h2>🏢 ${o.userData.name}</h2><p>${desc[o.userData.type]}</p><p>STATUS: READY FOR DEMO</p>`;}});
+const stars=[];for(let i=0;i<42;i++){const s=new THREE.Mesh(new THREE.SphereGeometry(.035,8,8),new THREE.MeshBasicMaterial({color:'#6ee9e2'}));s.position.set((Math.random()-.5)*19,.2+Math.random()*3,(Math.random()-.5)*17);scene.add(s);stars.push(s);}
+window.addEventListener('resize',()=>{camera.aspect=el.clientWidth/el.clientHeight;camera.updateProjectionMatrix();renderer.setSize(el.clientWidth,el.clientHeight);});
+function animate(){requestAnimationFrame(animate);controls.update();orb.rotation.y+=.004;halo.rotation.z+=.005;renderer.render(scene,camera);}animate();
 </script>
-</body>
-</html>
+</body></html>
