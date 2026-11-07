@@ -1,183 +1,468 @@
+import json
+import math
+import urllib.request
+import urllib.error
+from datetime import datetime
+from typing import Any
+
 import streamlit as st
 import streamlit.components.v1 as components
-import plotly.graph_objects as go
-from pathlib import Path
 
-st.set_page_config(page_title="SME FinancePilot | 3D HQ", page_icon="🏙️", layout="wide")
+# ============================================================
+# SME FinancePilot — Local Agentic AI MVP
+# AI planner: Ollama (local Qwen3)
+# Deterministic tools: Python financial calculations
+# ============================================================
 
+st.set_page_config(
+    page_title="SME FinancePilot | Agentic Finance HQ",
+    page_icon="🏦",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+OLLAMA_URL = "http://localhost:11434/api/chat"
+DEFAULT_MODEL = "qwen3:4b"
+MAX_TOOLS_PER_RUN = 4
+
+# ---------------------------- Styling ----------------------------
 st.markdown("""
 <style>
-.stApp { background:#081522; color:#edf3fa; }
-[data-testid="stHeader"] { background:transparent; }
-h1,h2,h3,h4,p,label,span { color:#edf3fa; }
-[data-testid="stMetric"] { background:#1b3045; border:1px solid #405b73; padding:15px; border-radius:13px; }
-[data-testid="stMetricLabel"],[data-testid="stMetricLabel"] p { color:#b9cde0 !important; }
-[data-testid="stMetricValue"],[data-testid="stMetricValue"] div { color:#fff !important; font-weight:800; }
-[data-testid="stCaptionContainer"] p { color:#9fb2c8 !important; }
-.stButton button { background:#e9b64e; color:#102033; border:0; border-radius:9px; font-weight:800; min-height:42px; }
-.stButton button:hover { background:#ffd477; color:#102033; }
-[data-testid="stExpander"] { background:#14283b; border:1px solid #38536d; border-radius:12px; }
-hr { border-color:#314960; }
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+    html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
+    .stApp { background: radial-gradient(circle at 10% 0%, #15253b 0, #08111f 42%, #060b14 100%); color: #eef4ff; }
+    [data-testid="stSidebar"] { background: #0b1728; border-right: 1px solid #243650; }
+    h1,h2,h3 { font-family: 'Space Grotesk', sans-serif !important; color: #f3f7ff !important; }
+    .hero { padding: 22px 26px; border: 1px solid #29415e; border-radius: 18px; background: linear-gradient(115deg, rgba(24,51,79,.95), rgba(12,26,44,.94)); margin-bottom: 18px; }
+    .eyebrow { color: #73d9c4; font-size: 12px; font-weight: 700; letter-spacing: 2px; }
+    .muted { color: #9eb1c9; font-size: 13px; }
+    .agent-card { background: rgba(17,33,53,.92); border: 1px solid #2a405a; padding: 14px 16px; border-radius: 14px; min-height: 105px; }
+    .agent-name { color: #dceaff; font-weight: 700; font-size: 14px; }
+    .agent-desc { color: #9eb1c9; font-size: 12px; margin-top: 5px; }
+    .pill { display:inline-block; border:1px solid #35516e; color:#8fe4d2; border-radius:20px; padding:3px 9px; font-size:11px; margin:3px 4px 3px 0; }
+    .result { background: rgba(15,31,49,.92); border:1px solid #2b4561; border-radius:14px; padding:16px 18px; margin:8px 0; }
+    .warning { color:#ffd28b; }
+    div[data-testid="stMetric"] { background:#102239; border:1px solid #2b4561; border-radius:12px; padding:12px; }
+    .stButton>button { border-radius: 10px; font-weight: 700; }
+    .small-note { color:#8da2bc; font-size:11px; }
 </style>
 """, unsafe_allow_html=True)
 
-def money(v):
-    return f"RM {v:,.2f}"
-
-def finance_calculator(revenue, cogs, opex):
+# ---------------------------- Finance tools ----------------------------
+def finance_calculator(data: dict) -> dict:
+    revenue = max(0.0, float(data["monthly_revenue"]))
+    cogs = max(0.0, float(data["monthly_cogs"]))
+    opex = max(0.0, float(data["monthly_opex"]))
     gross_profit = revenue - cogs
     operating_surplus = gross_profit - opex
+    gross_margin = (gross_profit / revenue * 100) if revenue else 0
+    operating_margin = (operating_surplus / revenue * 100) if revenue else 0
     return {
-        "gross_profit": gross_profit,
-        "gross_margin": gross_profit / revenue * 100 if revenue else 0,
-        "operating_surplus": operating_surplus,
-        "operating_margin": operating_surplus / revenue * 100 if revenue else 0,
-        "cogs_ratio": cogs / revenue * 100 if revenue else 0,
-        "opex_ratio": opex / revenue * 100 if revenue else 0,
+        "monthly_revenue_rm": round(revenue, 2),
+        "cost_of_goods_sold_rm": round(cogs, 2),
+        "operating_expenses_rm": round(opex, 2),
+        "gross_profit_rm": round(gross_profit, 2),
+        "operating_surplus_before_financing_tax_rm": round(operating_surplus, 2),
+        "gross_margin_percent": round(gross_margin, 2),
+        "operating_margin_percent": round(operating_margin, 2),
+        "interpretation": (
+            "Operating surplus is positive before financing costs and tax."
+            if operating_surplus >= 0 else
+            "The business is operating at a monthly deficit before financing costs and tax."
+        ),
+        "caution": "This is a simplified management estimate, not audited net profit."
     }
 
-def cash_flow_calculator(opening_cash, cash_received, cash_paid):
-    net = cash_received - cash_paid
-    return {"net_cash_flow": net, "closing_cash": opening_cash + net}
 
-def risk_detector(revenue, cogs, opex, closing_cash):
+def cash_flow_calculator(data: dict) -> dict:
+    opening = max(0.0, float(data["opening_cash"]))
+    received = max(0.0, float(data["cash_received"]))
+    paid = max(0.0, float(data["cash_paid"]))
+    net = received - paid
+    closing = opening + net
+    daily_burn = max(0.0, paid - received) / 30
+    runway = (closing / daily_burn) if daily_burn > 0 else None
+    # Simple 3-month stress forecast: same net movement each month.
+    forecast = []
+    balance = opening
+    for month in range(1, 4):
+        balance += net
+        forecast.append({"month": month, "projected_cash_rm": round(balance, 2)})
+    return {
+        "opening_cash_rm": round(opening, 2),
+        "cash_received_rm": round(received, 2),
+        "cash_paid_rm": round(paid, 2),
+        "net_cash_movement_rm": round(net, 2),
+        "estimated_closing_cash_rm": round(closing, 2),
+        "estimated_runway_days": round(runway * 30, 1) if runway is not None else "No cash burn under current inputs",
+        "three_month_projection": forecast,
+        "warning": "Projection assumes the same monthly cash movement repeats; it is not a guarantee."
+    }
+
+
+def risk_detector(data: dict) -> dict:
+    finance = finance_calculator(data)
+    cash = cash_flow_calculator(data)
     risks = []
-    if revenue <= 0:
-        risks.append(("HIGH", "No revenue recorded. Check the reporting period and sales records."))
-    if revenue > 0 and cogs / revenue > 0.45:
-        risks.append(("MEDIUM", "COGS exceeds 45% of revenue. Review ingredient and supplier costs."))
-    if revenue > 0 and opex / revenue > 0.50:
-        risks.append(("MEDIUM", "Operating expenses exceed 50% of revenue. Review fixed and variable costs."))
-    if closing_cash < 5000:
-        risks.append(("HIGH", "Closing cash is below RM5,000. Review near-term payment commitments."))
+    score = 0
+    if finance["operating_surplus_before_financing_tax_rm"] < 0:
+        risks.append({"risk": "Operating deficit", "severity": "High", "reason": "Monthly operating costs exceed gross profit."})
+        score += 35
+    if cash["estimated_closing_cash_rm"] < 0:
+        risks.append({"risk": "Negative estimated closing cash", "severity": "Critical", "reason": "Expected cash outflow exceeds available cash."})
+        score += 40
+    elif cash["estimated_closing_cash_rm"] < data["monthly_opex"]:
+        risks.append({"risk": "Low cash buffer", "severity": "High", "reason": "Estimated closing cash is below one month of operating expenses."})
+        score += 25
+    if data["monthly_revenue"] > 0 and data["monthly_cogs"] / data["monthly_revenue"] > 0.55:
+        risks.append({"risk": "High direct-cost ratio", "severity": "Medium", "reason": "COGS is above 55% of monthly revenue."})
+        score += 15
+    if data["monthly_revenue"] > 0 and data["monthly_opex"] / data["monthly_revenue"] > 0.40:
+        risks.append({"risk": "High operating-expense ratio", "severity": "Medium", "reason": "Operating expenses are above 40% of monthly revenue."})
+        score += 15
     if not risks:
-        risks.append(("INFO", "No warning was triggered by the illustrative thresholds used in this demo."))
-    return risks
-
-def strategy_simulator(revenue, cogs, opex):
+        risks.append({"risk": "No major rule-based warning detected", "severity": "Low", "reason": "Current sample inputs do not trigger the prototype's risk thresholds."})
     return {
-        "Current baseline": revenue - cogs - opex,
-        "A · Reduce OPEX by 5%": revenue - cogs - opex * 0.95,
-        "B · Sales +8%, COGS scales, extra promo cost 3% of current revenue":
-            revenue * 1.08 - cogs * 1.08 - (opex + revenue * 0.03)
+        "risk_score_out_of_100": min(score, 100),
+        "risk_level": "Critical" if score >= 70 else "High" if score >= 40 else "Moderate" if score >= 20 else "Low",
+        "identified_risks": risks,
+        "method_note": "Transparent prototype thresholds; not a credit score or professional risk rating."
     }
 
-st.sidebar.markdown("## 🧠 FINANCE CORE")
-st.sidebar.caption("Central SME financial intelligence")
-page = st.sidebar.radio("NAVIGATION", [
-    "🏙️ 3D Headquarters", "📊 Financial Intelligence", "💧 Cash Flow Analysis",
-    "🔭 Risk Observatory", "⚙️ Strategy Lab", "🏛️ Decision Pavilion"
-])
-st.sidebar.divider()
-st.sidebar.markdown("### ☕ SAMPLE SME DATA")
-business_name = st.sidebar.text_input("Business name", "Kopi Kita Café (DEMO)")
-revenue = st.sidebar.number_input("Monthly revenue (RM)", min_value=0.0, value=50000.0, step=1000.0)
-cogs = st.sidebar.number_input("Cost of goods sold (RM)", min_value=0.0, value=18000.0, step=500.0)
-opex = st.sidebar.number_input("Operating expenses (RM)", min_value=0.0, value=22000.0, step=500.0)
-opening_cash = st.sidebar.number_input("Opening cash (RM)", min_value=0.0, value=15000.0, step=500.0)
-cash_received = st.sidebar.number_input("Actual cash received (RM)", min_value=0.0, value=48000.0, step=1000.0)
-cash_paid = st.sidebar.number_input("Actual cash paid (RM)", min_value=0.0, value=40000.0, step=1000.0)
 
-def run_workflow():
-    f = finance_calculator(revenue, cogs, opex)
-    c = cash_flow_calculator(opening_cash, cash_received, cash_paid)
-    r = risk_detector(revenue, cogs, opex, c["closing_cash"])
-    s = strategy_simulator(revenue, cogs, opex)
-    best = max(s, key=s.get)
-    return {"finance": f, "cash": c, "risks": r, "strategies": s, "best": best}
+def strategy_simulator(data: dict) -> dict:
+    revenue = float(data["monthly_revenue"])
+    cogs = float(data["monthly_cogs"])
+    opex = float(data["monthly_opex"])
+    # Three illustrative, editable-by-code scenarios.
+    scenarios = [
+        {"name": "Cost-control", "revenue_change_pct": 0, "cogs_change_pct": -5, "opex_change_pct": -8,
+         "explanation": "Reduce ingredient wastage and review recurring operating expenses."},
+        {"name": "Sales-growth", "revenue_change_pct": 8, "cogs_change_pct": 3, "opex_change_pct": 2,
+         "explanation": "Test a small promotion or higher-margin menu bundle; costs also rise slightly."},
+        {"name": "Balanced", "revenue_change_pct": 4, "cogs_change_pct": -2, "opex_change_pct": -3,
+         "explanation": "Combine a modest sales push with purchasing and expense controls."},
+    ]
+    output = []
+    for s in scenarios:
+        r = revenue * (1 + s["revenue_change_pct"] / 100)
+        c = cogs * (1 + s["cogs_change_pct"] / 100)
+        o = opex * (1 + s["opex_change_pct"] / 100)
+        surplus = r - c - o
+        output.append({
+            "scenario": s["name"],
+            "revenue_rm": round(r, 2),
+            "cogs_rm": round(c, 2),
+            "opex_rm": round(o, 2),
+            "estimated_operating_surplus_rm": round(surplus, 2),
+            "change_vs_current_rm": round(surplus - (revenue - cogs - opex), 2),
+            "assumption": s["explanation"]
+        })
+    best = max(output, key=lambda x: x["estimated_operating_surplus_rm"])
+    return {
+        "scenarios": output,
+        "best_by_estimated_operating_surplus": best["scenario"],
+        "important_note": "Illustrative what-if scenarios only. Results are not forecasts or guaranteed outcomes."
+    }
 
-if "result" not in st.session_state:
-    st.session_state.result = None
-if "approved" not in st.session_state:
-    st.session_state.approved = None
 
-st.markdown("# 🏙️ SME FinancePilot")
-st.caption("AUTONOMOUS FINANCIAL INTELLIGENCE HQ · PROTOTYPE · DEMO / SAMPLE")
-st.divider()
+TOOL_REGISTRY = {
+    "finance_calculator": {
+        "agent": "Finance Agent",
+        "description": "Calculate gross profit, operating surplus and margins from monthly revenue, COGS and OPEX.",
+        "function": finance_calculator,
+    },
+    "cash_flow_calculator": {
+        "agent": "Cash Flow Agent",
+        "description": "Calculate net cash movement, estimated closing cash, runway and a simple 3-month projection.",
+        "function": cash_flow_calculator,
+    },
+    "risk_detector": {
+        "agent": "Risk Agent",
+        "description": "Detect operating deficit, low cash buffer and cost-ratio risks using transparent thresholds.",
+        "function": risk_detector,
+    },
+    "strategy_simulator": {
+        "agent": "Strategy Agent",
+        "description": "Compare cost-control, sales-growth and balanced business scenarios.",
+        "function": strategy_simulator,
+    },
+}
 
-if page == "🏙️ 3D Headquarters":
-    st.subheader("Financial Ecosystem — Interactive 3D HQ")
-    st.caption("Drag to rotate · Scroll to zoom · Click a building to inspect its agent.")
-    html_path = Path(__file__).parent / "components" / "hq_scene.html"
-    if html_path.exists():
-        components.html(html_path.read_text(encoding="utf-8"), height=720, scrolling=False)
+# ---------------------------- Ollama functions ----------------------------
+def ollama_chat(messages: list[dict], model: str, json_mode: bool = False) -> str:
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {"temperature": 0.2, "num_ctx": 8192},
+    }
+    if json_mode:
+        payload["format"] = "json"
+    request = urllib.request.Request(
+        OLLAMA_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            return result.get("message", {}).get("content", "")
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            "无法连接本机 Ollama。请确认 Ollama 已安装并在后台运行，"
+            "再在 PowerShell 执行 `ollama list` 检查模型。"
+        ) from exc
+
+
+def extract_json(text: str) -> dict:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.replace("```json", "").replace("```", "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("模型没有返回有效 JSON")
+    return json.loads(text[start:end + 1])
+
+
+def make_plan(goal: str, data: dict, model: str) -> dict:
+    tool_lines = "\n".join(
+        f'- {name}: {spec["description"]}'
+        for name, spec in TOOL_REGISTRY.items()
+    )
+    system = f"""
+You are Finance Core, an agentic planner for a Malaysian small cafe/restaurant SME.
+Your job is to understand the user's goal, create a short plan, and select only the tools needed.
+Available tools:
+{tool_lines}
+
+Rules:
+- Select 1 to 4 tools from the exact tool names above.
+- Use finance_calculator for profit/margin questions.
+- Use cash_flow_calculator for liquidity/cash runway questions.
+- Use risk_detector for risk/survival questions.
+- Use strategy_simulator for "what should I do", scenario or improvement questions.
+- For broad business-health questions, choose all relevant tools.
+- Never invent financial figures. Tools will calculate the figures.
+- This is a sample decision-support prototype, not professional financial advice.
+Return ONLY valid JSON with this exact structure:
+{{
+  "goal_interpretation": "one sentence",
+  "plan": ["step 1", "step 2"],
+  "selected_tools": ["tool_name"],
+  "reason_for_selection": "short reason"
+}}
+"""
+    user = f"Business data (RM): {json.dumps(data, ensure_ascii=False)}\nUser goal: {goal}"
+    raw = ollama_chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        model,
+        json_mode=True,
+    )
+    plan = extract_json(raw)
+    selected = plan.get("selected_tools", [])
+    selected = [x for x in selected if x in TOOL_REGISTRY][:MAX_TOOLS_PER_RUN]
+    if not selected:
+        raise ValueError("AI 没有选择有效工具。请重试或更换模型。")
+    plan["selected_tools"] = selected
+    return plan
+
+
+def run_agentic_workflow(goal: str, data: dict, model: str) -> dict:
+    # 1) AI interprets the goal and dynamically selects tools.
+    plan = make_plan(goal, data, model)
+
+    # 2) Orchestrator validates the plan and executes selected Python tools.
+    tool_results = {}
+    activity = []
+    for tool_name in plan["selected_tools"]:
+        spec = TOOL_REGISTRY[tool_name]
+        activity.append(f'{spec["agent"]}：执行 `{tool_name}`')
+        tool_results[tool_name] = spec["function"](data)
+
+    # 3) AI observes tool outputs and synthesizes a recommendation.
+    synthesis_system = """
+You are Decision Agent in SME FinancePilot.
+Use ONLY the supplied tool outputs and business data. Do not invent numbers.
+Explain the most important findings, recommend practical next steps, and mention assumptions.
+Distinguish operating surplus from cash flow. Operating surplus is not net profit.
+Never claim that a real payment, bank transaction or external action has been made.
+Return concise, clear language suitable for a Malaysian small business owner.
+"""
+    synthesis_user = (
+        f"User goal: {goal}\n"
+        f"Business data: {json.dumps(data, ensure_ascii=False)}\n"
+        f"AI plan: {json.dumps(plan, ensure_ascii=False)}\n"
+        f"Tool outputs: {json.dumps(tool_results, ensure_ascii=False)}\n"
+        "Write: (1) key findings, (2) recommended action, (3) what owner should verify."
+    )
+    final_text = ollama_chat(
+        [{"role": "system", "content": synthesis_system},
+         {"role": "user", "content": synthesis_user}],
+        model,
+        json_mode=False,
+    )
+    return {
+        "plan": plan,
+        "activity": activity,
+        "tool_results": tool_results,
+        "decision": final_text,
+        "timestamp": datetime.now().strftime("%d %b %Y, %I:%M:%S %p"),
+    }
+
+
+# ---------------------------- Sidebar ----------------------------
+st.sidebar.markdown("## 🏦 FinancePilot")
+st.sidebar.caption("Local Agentic AI • SAMPLE DEMO")
+model = st.sidebar.text_input("Ollama model", value=DEFAULT_MODEL, help="必须与 `ollama list` 显示的名称一致。")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Sample SME financial data (RM)")
+monthly_revenue = st.sidebar.number_input("Monthly revenue", min_value=0.0, value=30000.0, step=500.0)
+monthly_cogs = st.sidebar.number_input("Monthly COGS / ingredients", min_value=0.0, value=12000.0, step=500.0)
+monthly_opex = st.sidebar.number_input("Monthly operating expenses", min_value=0.0, value=14000.0, step=500.0)
+opening_cash = st.sidebar.number_input("Opening cash balance", min_value=0.0, value=10000.0, step=500.0)
+cash_received = st.sidebar.number_input("Cash received this month", min_value=0.0, value=28000.0, step=500.0)
+cash_paid = st.sidebar.number_input("Cash paid this month", min_value=0.0, value=26000.0, step=500.0)
+
+business_data = {
+    "monthly_revenue": monthly_revenue,
+    "monthly_cogs": monthly_cogs,
+    "monthly_opex": monthly_opex,
+    "opening_cash": opening_cash,
+    "cash_received": cash_received,
+    "cash_paid": cash_paid,
+}
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Privacy mode:** All model inference runs on this computer through Ollama.")
+st.sidebar.caption("Do not enter real customer identities, bank credentials or confidential account numbers.")
+
+# ---------------------------- Main UI ----------------------------
+st.markdown("""
+<div class="hero">
+  <div class="eyebrow">AUTONOMOUS SME FINANCIAL INTELLIGENCE</div>
+  <h1 style="margin:6px 0 2px 0;">SME FinancePilot</h1>
+  <div style="color:#b8c9dc;font-size:15px;">Your local AI finance team — plan, analyse, simulate and recommend.</div>
+  <div style="margin-top:10px;">
+    <span class="pill">LOCAL AI</span><span class="pill">5 AGENTS</span><span class="pill">HUMAN APPROVAL</span><span class="pill">SAMPLE DATA</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Connection status
+col_status1, col_status2, col_status3 = st.columns([1, 1, 2])
+with col_status1:
+    st.metric("AI model", model)
+with col_status2:
+    st.metric("Agent team", "5")
+with col_status3:
+    st.caption("Ollama endpoint: http://localhost:11434 • Local-only inference")
+
+st.markdown("### 🏙️ Agentic Finance HQ")
+scene_path = "components/hq_scene.html"
+try:
+    with open(scene_path, "r", encoding="utf-8") as f:
+        scene_html = f.read()
+    components.html(scene_html, height=470, scrolling=False)
+except FileNotFoundError:
+    st.error("Missing components/hq_scene.html. Keep the components folder beside app.py.")
+
+st.markdown("### 👥 Your five-agent team")
+agent_cols = st.columns(5)
+agents = [
+    ("🏦", "Finance Agent", "Profit, cost & margin"),
+    ("🌊", "Cash Flow Agent", "Liquidity & runway"),
+    ("🔭", "Risk Agent", "Early warning signals"),
+    ("🧪", "Strategy Agent", "What-if simulations"),
+    ("🎯", "Decision Agent", "Recommendation & approval"),
+]
+for col, (emoji, name, desc) in zip(agent_cols, agents):
+    with col:
+        st.markdown(
+            f'<div class="agent-card"><div style="font-size:24px">{emoji}</div>'
+            f'<div class="agent-name">{name}</div><div class="agent-desc">{desc}</div></div>',
+            unsafe_allow_html=True
+        )
+
+st.markdown("---")
+st.markdown("### 🤖 Ask Finance Core")
+st.write("告诉 Finance Core 你想解决什么问题。AI 会先规划，再选择需要的财务工具，而不是每次固定执行全部计算。")
+goal = st.text_area(
+    "Business goal / question",
+    value="Please assess whether my cafe is financially healthy, identify the biggest risks, and recommend the best action to improve monthly operating surplus and cash resilience.",
+    height=105,
+)
+run_col, info_col = st.columns([1, 2])
+with run_col:
+    run_clicked = st.button("🚀 Run Finance Core", type="primary", use_container_width=True)
+with info_col:
+    st.caption("The AI planner chooses tools dynamically. Python performs the calculations. Decision Agent explains the results.")
+
+if run_clicked:
+    if not goal.strip():
+        st.warning("Please enter a business goal first.")
     else:
-        st.error("Missing components/hq_scene.html. Keep the components folder beside app.py.")
-    a, b, c = st.columns(3)
-    a.metric("Specialised agents", "5")
-    b.metric("Business", business_name)
-    c.metric("Mode", "DEMO")
-    if st.button("🚀 Run all five agents", use_container_width=True):
-        st.session_state.result = run_workflow()
-        st.session_state.approved = None
-        st.success("The five-agent analysis workflow has completed.")
-    st.info("This prototype uses transparent Python calculation tools. The current 3D building click shows agent descriptions; the financial workflow runs with the button above.")
+        with st.spinner("Finance Core is planning and coordinating the agents... This may take a minute on a CPU."):
+            try:
+                result = run_agentic_workflow(goal.strip(), business_data, model.strip())
+                st.session_state["last_result"] = result
+                st.session_state["approval_status"] = "Pending owner review"
+            except Exception as e:
+                st.error(f"Agent workflow could not complete: {e}")
+                st.info("Check that Ollama is running and the selected model has been downloaded.")
+                st.code("ollama list\nollama run qwen3:4b")
 
-elif page == "📊 Financial Intelligence":
-    st.subheader("01 · Finance Tower")
-    st.write("Analyses sales, cost of goods sold, gross profit and operating surplus.")
-    if st.button("Run Finance Agent"):
-        st.session_state.result = run_workflow()
-    if st.session_state.result:
-        f = st.session_state.result["finance"]
-        x, y, z = st.columns(3)
-        x.metric("Gross profit", money(f["gross_profit"]))
-        y.metric("Operating surplus", money(f["operating_surplus"]))
-        z.metric("Operating margin", f'{f["operating_margin"]:.1f}%')
-        st.write(f'COGS ratio: {f["cogs_ratio"]:.1f}% · OPEX ratio: {f["opex_ratio"]:.1f}%')
-        st.caption("Operating surplus here is a simplified revenue − COGS − operating expenses measure. It is not accounting net profit.")
+if "last_result" in st.session_state:
+    result = st.session_state["last_result"]
+    st.markdown("---")
+    st.markdown("## 🧠 Finance Core execution report")
+    st.caption(f"Completed: {result['timestamp']}")
+    st.markdown("### 1. Goal interpretation")
+    st.info(result["plan"].get("goal_interpretation", ""))
+    st.markdown("### 2. AI-generated execution plan")
+    for i, step in enumerate(result["plan"].get("plan", []), 1):
+        st.write(f"**{i}.** {step}")
+    st.markdown("**Tools dynamically selected by AI:**")
+    selected_cols = st.columns(len(result["plan"]["selected_tools"]))
+    for col, tool_name in zip(selected_cols, result["plan"]["selected_tools"]):
+        with col:
+            st.markdown(f'<div class="agent-card"><div class="agent-name">{TOOL_REGISTRY[tool_name]["agent"]}</div><div class="agent-desc">{tool_name}</div></div>', unsafe_allow_html=True)
+    st.markdown("### 3. Agent execution log")
+    for item in result["activity"]:
+        st.success(item)
+    st.markdown("### 4. Financial tool outputs")
+    for tool_name, output in result["tool_results"].items():
+        with st.expander(f'{TOOL_REGISTRY[tool_name]["agent"]} — {tool_name}', expanded=True):
+            st.json(output)
+    st.markdown("### 5. Decision Agent recommendation")
+    st.markdown(f'<div class="result">{result["decision"].replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
 
-elif page == "💧 Cash Flow Analysis":
-    st.subheader("02 · Cash Flow Harbour")
-    st.write("Tracks actual cash received and paid, separately from accounting revenue and expenses.")
-    if st.button("Run Cash Flow Agent"):
-        st.session_state.result = run_workflow()
-    if st.session_state.result:
-        c = st.session_state.result["cash"]
-        x, y = st.columns(2)
-        x.metric("Net cash flow", money(c["net_cash_flow"]))
-        y.metric("Closing cash", money(c["closing_cash"]))
-        st.caption("Closing cash = opening cash + actual cash received − actual cash paid.")
+    st.markdown("### 6. Human-in-the-loop approval")
+    st.warning("No real payment, bank transfer or business change will be executed. This approval is a simulated demo action only.")
+    if st.session_state.get("approval_status") == "Pending owner review":
+        approve_col, reject_col = st.columns(2)
+        with approve_col:
+            if st.button("✅ Approve recommendation (simulation)", use_container_width=True):
+                st.session_state["approval_status"] = "Approved in demo"
+                st.session_state["approval_log"] = f"Owner approved the recommendation in the SAMPLE demo at {datetime.now().strftime('%d %b %Y %I:%M %p')}."
+                st.rerun()
+        with reject_col:
+            if st.button("↩️ Request revision", use_container_width=True):
+                st.session_state["approval_status"] = "Revision requested"
+                st.session_state["approval_log"] = "Owner did not approve; no action was executed."
+                st.rerun()
+    st.info(f"Status: {st.session_state.get('approval_status', 'Pending owner review')}")
+    if st.session_state.get("approval_log"):
+        st.caption(st.session_state["approval_log"])
 
-elif page == "🔭 Risk Observatory":
-    st.subheader("03 · Risk Observatory")
-    if st.button("Scan business risks"):
-        st.session_state.result = run_workflow()
-    if st.session_state.result:
-        for level, message in st.session_state.result["risks"]:
-            (st.error if level == "HIGH" else st.warning if level == "MEDIUM" else st.info)(f"{level}: {message}")
-    else:
-        st.info("Run the risk scan to evaluate the current sample inputs.")
-
-elif page == "⚙️ Strategy Lab":
-    st.subheader("04 · Strategy Lab")
-    st.write("Compares illustrative operating-surplus scenarios. Assumptions are explicit and editable in the source code.")
-    if st.button("Simulate strategies"):
-        st.session_state.result = run_workflow()
-    if st.session_state.result:
-        scenarios = st.session_state.result["strategies"]
-        fig = go.Figure(go.Bar(x=list(scenarios.keys()), y=list(scenarios.values()), text=[f"RM {v:,.0f}" for v in scenarios.values()], textposition="auto"))
-        fig.update_layout(template="plotly_dark", paper_bgcolor="#081522", plot_bgcolor="#081522", font_color="#edf3fa", yaxis_title="Illustrative operating surplus (RM)", height=420)
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("Scenario B assumes sales rise 8%, COGS rises proportionally, and additional promotion expense equals 3% of current revenue. These are demo assumptions, not forecasts.")
-
-elif page == "🏛️ Decision Pavilion":
-    st.subheader("05 · Decision Pavilion")
-    if st.button("Prepare decision report"):
-        st.session_state.result = run_workflow()
-        st.session_state.approved = None
-    if st.session_state.result:
-        result = st.session_state.result
-        best = result["best"]
-        st.info(f"Recommended scenario based only on the simplified operating-surplus calculation: {best}")
-        st.metric("Scenario operating surplus", money(result["strategies"][best]))
-        st.warning("Owner approval is required. Approval records a demo decision only; no real transaction or business change will occur.")
-        if st.button("✅ Approve simulated strategy"):
-            st.session_state.approved = best
-        if st.session_state.approved:
-            st.success(f"Demo approval recorded: {st.session_state.approved}")
-    else:
-        st.info("Prepare a decision report to review the recommended scenario.")
-
-st.divider()
-st.markdown("<div style='text-align:center;color:#91a9c0;padding:10px'>SME FinancePilot · Agentic AI Challenge 2026 · DEMO / SAMPLE</div>", unsafe_allow_html=True)
+st.markdown("---")
+st.markdown("### 📌 Prototype limitations")
+st.markdown("""
+- This is a **competition MVP / SAMPLE DEMO**, not a regulated financial-advice service.
+- Ollama runs locally on the computer hosting this app. A Streamlit Cloud deployment cannot automatically access Ollama on your personal laptop.
+- Calculations use the sample values entered in the sidebar. Strategy scenarios are illustrative assumptions, not forecasts.
+- No bank connection, payment, loan application or external transaction is performed.
+- Operating surplus is not the same as accounting net profit; tax, interest, depreciation and other adjustments are not fully modelled.
+""")
+st.caption("SME FinancePilot • Agentic AI Challenge 2026 • Built as a local prototype")
